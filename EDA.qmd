@@ -8,14 +8,79 @@ editor: visual
 
 ## Data Introduction
 
-Diabetes is a wide-spread 
-This data set aimed to providel links between patients' diabetic conditions, life pattern behavior and social-economic status.
+Diabetes is a wide-spread disease, especially in the US. Although genetic plays a role in the ethiology of diabetes, it has been estimated around 90% to 95% of diabetes cases could be attributed to life-style factors, like diet, weight management and physical activity.This data set aimed to providel links between patients' diabetic conditions, life pattern behavior and social-economic status.
 
-Content
-The Behavioral Risk Factor Surveillance System (BRFSS) is a health-related telephone survey that is collected annually by the CDC. Each year, the survey collects responses from over 400,000 Americans on health-related risk behaviors, chronic health conditions, and the use of preventative services. It has been conducted every year since 1984. For this project, a csv of the dataset available on Kaggle for the year 2015 was used. This original dataset contains responses from 441,455 individuals and has 330 features. These features are either questions directly asked of participants, or calculated variables based on individual participant responses.
+For this project, a csv of the data set available on Kaggle for the year 2015 was used. This original data set contains responses from 441,455 individuals and has 330 features. These features are either questions directly asked of participants, or calculated variables based on individual participant responses.The file we are interested in (*diabetes \_ binary \_ health \_ indicators \_ BRFSS2015.csv*) is a clean dataset of 253,680 survey responses to the CDC's BRFSS2015. The target variable Diabetes_binary has 2 classes. 0 is for no diabetes, and 1 is for prediabetes or diabetes. This dataset has 21 feature variables and is not balanced. Our goal is to find how the combination of different input factors could contribute to the prediction of diabetic status.
 
-This dataset contains 3 files:
+## Data reading and cleaning
 
-diabetes _ 012 _ health _ indicators _ BRFSS2015.csv is a clean dataset of 253,680 survey responses to the CDC's BRFSS2015. The target variable Diabetes_012 has 3 classes. 0 is for no diabetes or only during pregnancy, 1 is for prediabetes, and 2 is for diabetes. There is class imbalance in this dataset. This dataset has 21 feature variables
-diabetes _ binary _ 5050split _ health _ indicators _ BRFSS2015.csv is a clean dataset of 70,692 survey responses to the CDC's BRFSS2015. It has an equal 50-50 split of respondents with no diabetes and with either prediabetes or diabetes. The target variable Diabetes_binary has 2 classes. 0 is for no diabetes, and 1 is for prediabetes or diabetes. This dataset has 21 feature variables and is balanced.
-diabetes _ binary _ health _ indicators _ BRFSS2015.csv is a clean dataset of 253,680 survey responses to the CDC's BRFSS2015. The target variable Diabetes_binary has 2 classes. 0 is for no diabetes, and 1 is for prediabetes or diabetes. This dataset has 21 feature variables and is not balanced.
+Let's read the file into R first.
+
+```{r}
+diabetesdata <- read.csv ("data\\diabetes_binary_health_indicators_BRFSS2015.csv")
+str (diabetesdata)
+```
+
+As shown, this data set has 22 variables, we will use only 1 **Diabetes_binary** as an outcome variable, and all others as predictors. However, there are many numeric variables that should actually be treated as factors. We will change those variables.
+
+```{r}
+library (dplyr)
+diabetesdata <- diabetesdata |> mutate (across (-c(MentHlth, PhysHlth, BMI), as.factor))
+str (diabetesdata)
+```
+
+Now you could see the attributes of the variables have been reset. Let's check whether are missing values in each column. 
+
+```{r}
+missing_counts <- diabetesdata |> 
+  summarise(across(everything(), ~sum(is.na(.))))
+missing_counts
+```
+To our relief, there is no missing data in the data set. Now we are ready to do some exploratory data analysis.
+
+## Exploratory data analysis
+
+We could generate a table with incidence of diabetes and other categorical variables.
+```{r}
+table (diabetesdata$Diabetes_binary, diabetesdata$HighBP, diabetesdata$HighChol)
+diabetesdata |> group_by(HighBP, HighChol, Diabetes_binary) |> summarize (count = n())
+diabetesdata |> group_by (Smoker, HeartDiseaseorAttack, Diabetes_binary) |> summarize (count = n())
+```
+From the summary table we could easily find those factors significantly contribute to the occurance of diabetes. Is there a way to find the hazard ratio of those life-style factors to diabetes? Luckily there is a package for that.
+
+```{r}
+diabetesdata |> group_by(HighBP, HighChol, Diabetes_binary) |> summarize (count = n()) |> pivot_wider(
+  names_from = Diabetes_binary,
+  values_from = count)
+
+diabetesdata |> group_by(PhysActivity,HvyAlcoholConsump, Diabetes_binary) |> summarize (count = n ()) |> pivot_wider (names_from = Diabetes_binary, values_from = count)
+
+smdbtable <- diabetesdata |> group_by (Smoker, Diabetes_binary) |> summarize (count = n()) |>pivot_wider (
+  names_from = Diabetes_binary,
+  values_from = count)
+```
+
+We are provided with many categorical variables with only one outcome and many others being predictors. Given diabetes are highly attributagle to life style and living condition factors, it is intuitive to make tables to calculate the hazard ratio. Luckily there is a package for that.
+
+```{r}
+calculate_odds_ratio <- function(data) {
+  # Compute odds ratio using contingency table
+  tab <- matrix(c(data$`1`[1], data$`0`[1],
+                  data$`1`[2], data$`0`[2]),
+                nrow = 2, byrow = TRUE)
+  
+  # Use the fisher.test for OR and CI
+  test <- fisher.test(tab)
+  
+  list(
+    OR = test$estimate,
+    CI = test$conf.int,
+    P_value = test$p.value
+  )
+}
+
+# Apply the function to your data
+result <- calculate_odds_ratio(smdbtable)
+print(result)
+```
+
