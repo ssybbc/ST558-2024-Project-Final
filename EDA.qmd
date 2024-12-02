@@ -104,12 +104,14 @@ generate_contingency_tables <- function(data, outcome) {
 
 diabetes_contingency <- generate_contingency_tables (data=diabetesdatabin, outcome = "Diabetes_binary")
 ```
+
 Here we generated the contingency table for all binary factorial predictors. We could calculate their odds ratios.
 
 ```{r}
 OR_HighBP <- (diabetes_contingency$HighBP [2,2]/diabetes_contingency$HighBP[1,2])/
                      (diabetes_contingency$HighBP[2,1]/diabetes_contingency$HighBP[1,1])
 ```
+
 Let's make a function to loop through all lists in the *diabetes_contigency* to generate a new table called *OR_table*
 
 ```{r}
@@ -121,13 +123,23 @@ calculate_odds_ratios <- function(contingency_list) {
   names(odds_ratios) <- names(contingency_list)
   return(odds_ratios)
 }
-calculate_odds_ratios (diabetes_contingency)
+diabetes_OR <- unlist (calculate_odds_ratios (diabetes_contingency))
 ```
+
+We could plot the odds ratio of different factors to diabetes.
 
 ```{r}
-
+diabetes_OR_df <- data.frame (
+  category = names (diabetes_OR),
+  OR = as.numeric (diabetes_OR)
+)
+ggplot(diabetes_OR_df, aes(x = category, y = OR)) +
+  geom_bar(stat = "identity", fill = ifelse(diabetes_OR_df$OR > 2, "gold", "skyblue"), color = "black") +
+  labs(title = "Odds ratios associated with diabetes ocurrance", x = "Binary Predictors", y = "Odds ratio") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
+From the bar plot, we could highlight the predictors with OR bigger than 2 (generally considered "big enough" in diabetic study) to be significant contributors of diabetes, including whether or not the person has experienced heart disease or attack, stroke, has high blood pressure or high cholesterol, or experienced difficulty in walking or had their cholesterol level checked in the past 5 years. Despite being the strongest predictor of diabetes (without considering the interaction among factors), Having **Cholcheck**ed still could only have about 18% of chance being diagnosed diabetes, so a model combining multiple predictors and considering predictors interaction is definitely needed.
 
 ```{r}
 # Example data with multiple conditions
