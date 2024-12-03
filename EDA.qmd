@@ -29,23 +29,26 @@ diabetesdata <- diabetesdata |> mutate (across (-c(MentHlth, PhysHlth, BMI), as.
 str (diabetesdata)
 ```
 
-Now you could see the attributes of the variables have been reset. Let's check whether are missing values in each column. 
+Now you could see the attributes of the variables have been reset. Let's check whether are missing values in each column.
 
 ```{r}
 missing_counts <- diabetesdata |> 
   summarise(across(everything(), ~sum(is.na(.))))
 missing_counts
 ```
+
 To our relief, there is no missing data in the data set. Now we are ready to do some exploratory data analysis.
 
 ## Exploratory data analysis
 
 We could generate a table with incidence of diabetes and other categorical variables.
+
 ```{r}
 table (diabetesdata$Diabetes_binary, diabetesdata$HighBP, diabetesdata$HighChol)
 diabetesdata |> group_by(HighBP, HighChol, Diabetes_binary) |> summarize (count = n())
 diabetesdata |> group_by (Smoker, HeartDiseaseorAttack, Diabetes_binary) |> summarize (count = n())
 ```
+
 From the summary table we could easily find those factors significantly contribute to the occurance of diabetes. Is there a way to find the hazard ratio of those life-style factors to diabetes? Luckily there is a package for that.
 
 ```{r}
@@ -108,8 +111,7 @@ diabetes_contingency <- generate_contingency_tables (data=diabetesdatabin, outco
 Here we generated the contingency table for all binary factorial predictors. We could calculate their odds ratios.
 
 ```{r}
-OR_HighBP <- (diabetes_contingency$HighBP [2,2]/diabetes_contingency$HighBP[1,2])/
-                     (diabetes_contingency$HighBP[2,1]/diabetes_contingency$HighBP[1,1])
+OR_HighBP <- (diabetes_contingency$HighBP [2,2]/diabetes_contingency$HighBP[1,2])/(diabetes_contingency$HighBP[2,1]/diabetes_contingency$HighBP[1,1])
 ```
 
 Let's make a function to loop through all lists in the *diabetes_contigency* to generate a new table called *OR_table*
@@ -139,37 +141,93 @@ ggplot(diabetes_OR_df, aes(x = category, y = OR)) +
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
-From the bar plot, we could highlight the predictors with OR bigger than 2 (generally considered "big enough" in diabetic study) to be significant contributors of diabetes, including whether or not the person has experienced heart disease or attack, stroke, has high blood pressure or high cholesterol, or experienced difficulty in walking or had their cholesterol level checked in the past 5 years. Despite being the strongest predictor of diabetes (without considering the interaction among factors), Having **Cholcheck**ed still could only have about 18% of chance being diagnosed diabetes, so a model combining multiple predictors and considering predictors interaction is definitely needed.
+From the bar plot, we could highlight the predictors with OR bigger than 2 (generally considered "big enough" in diabetic study) to be significant contributors of diabetes, including whether or not the person has experienced heart disease or attack, stroke, has high blood pressure or high cholesterol, or experienced difficulty in walking or had their cholesterol level checked in the past 5 years. Despite being the strongest predictor of diabetes (without considering the interaction among factors), Having **Cholcheck**ed still could only have about 17% of chance being diagnosed diabetes (35105 diabetes out of 209105 people), so a model combining multiple predictors and considering predictors interaction is definitely needed.
+
+There are four other factors which have more than two categories. Let's make contingency tables with those variables.
 
 ```{r}
-# Example data with multiple conditions
-data_list <- list(
-  BP = data.frame(Diabetes = c(30, 10), Non_Diabetes = c(70, 90)),
-  Smoking = data.frame(Diabetes = c(25, 15), Non_Diabetes = c(75, 85))
-)
-
-# Loop through each condition
-results <- lapply(data_list, calculate_odds_ratio)
-
-# Compile results into a data frame for plotting
-plot_data <- do.call(rbind, lapply(names(results), function(cond) {
-  res <- results[[cond]]
-  data.frame(
-    Condition = cond,
-    OR = res$OR,
-    Lower_CI = res$CI[1],
-    Upper_CI = res$CI[2]
-  )
-}))
-
-# Plot combined results
-ggplot(plot_data, aes(x = Condition, y = OR)) +
-  geom_point(size = 4) +
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.2) +
-  scale_y_log10() +
-  labs(title = "Odds Ratios for Multiple Conditions",
-       y = "Odds Ratio (log scale)",
-       x = "Condition") +
-  theme_minimal()
+diabetesdatamult <- diabetesdata |> select (Diabetes_binary, GenHlth, Age, Education, Income)
+diabetes_contingency_mult <- generate_contingency_tables (data=diabetesdatamult, outcome = "Diabetes_binary")
+diabetes_contingency_mult
 ```
 
+To find out whether there is a relationship between the incidence of diabetes and different levels of the multi-level variables, we could conduct statistical test over each contingency table.
+
+```{r}
+diabeteschisq <- lapply (diabetes_contingency_mult, chisq.test)
+diabeteschisqtable <- data.frame (
+  Variable = c ("Genhlth", "Age", "Education", "Income"),
+  p_value = c (diabeteschisq$GenHlth$p.value,
+               diabeteschisq$Age$p.value,
+               diabeteschisq$Educatio$p.value,
+               diabeteschisq$Income$p.value)
+  )
+diabeteschisqtable
+```
+
+So all four variables have a significant effect on the incidence of diabetes as the p-values are close to 0, meaning the chances that those variables have no effect on the incidence of diabetes are close to 0. To gain a more visual impression of the variables' impact on diabetes, we could do this:
+
+```{r}
+diabetes_contingency_mult_tibble <- lapply (diabetes_contingency_mult, as_tibble)
+
+Genhlth_table <- diabetes_contingency_mult_tibble$GenHlth |> pivot_wider(names_from = Diabetes_binary, values_from = n) |> mutate (ratio = `1` / `0`, GenHlth = as.factor (GenHlth))
+
+Age_table <- diabetes_contingency_mult_tibble$Age |> pivot_wider(names_from = Diabetes_binary, values_from = n) |> mutate (ratio = `1` / `0`, Age= as.factor (Age))
+Age_table$Age <- factor(Age_table$Age, levels = c(1,2,3,4,5,6,7,8,9,10,11,12,13))
+
+
+Edu_table <- diabetes_contingency_mult_tibble$Education |> pivot_wider(names_from = Diabetes_binary, values_from = n) |> mutate (ratio = `1` / `0`, Education= as.factor (Education))
+
+Income_table <- diabetes_contingency_mult_tibble$Income |> pivot_wider(names_from = Diabetes_binary, values_from = n) |> mutate (ratio = `1` / `0`, Income= as.factor (Income))
+```
+
+Now we could plot them
+
+```{r}
+library (gridExtra)
+
+Diabetes_Genhlth_plot <- 
+  ggplot(Genhlth_table, aes(x = GenHlth, y = ratio)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black", alpha = 0.5) +
+  labs(title = "Diabetes vs non-diabetes", x = "General Health", y = "Ratio")
+
+Diabetes_Age_plot <- 
+  ggplot(Age_table, aes(x = Age, y = ratio)) +
+  geom_bar(stat = "identity", fill = "lightgreen", color = "black", alpha = 0.5) +
+  labs(title = "Diabetes vs non-diabetes", x = "Age Group", y = "Ratio")
+
+Diabetes_Edu_plot <- 
+  ggplot(Edu_table, aes(x = Education, y = ratio)) +
+  geom_bar(stat = "identity", fill = "pink", color = "black", alpha = 0.5) +
+  labs(title = "Diabetes vs non-diabetes", x = "Education Level", y = "Ratio")
+
+Diabetes_Income_plot <- 
+  ggplot(Income_table, aes(x = Income, y = ratio)) +
+  geom_bar(stat = "identity", fill = "gold", color = "black", alpha = 0.5) +
+  labs(title = "Diabetes vs non-diabetes", x = "Income Level", y = "Ratio")
+
+grid.arrange(Diabetes_Genhlth_plot, Diabetes_Age_plot, Diabetes_Edu_plot, Diabetes_Income_plot, ncol = 2)
+```
+
+From the bar plot we could tell 1) People with poorest general health is the most likely to be diagnosed with diabetes; 2) As people get older, the rate of diabetes increased but topped at age group 11, which corresponds to 70 to 74 yo. 3) People in the Education level 2 and Income level 2, but not the least-educated and poorest, are the most likely to be diagnosed diabetes. This reflects the impact of social-economic status on the incidence of diabetes.
+
+To measure the overall association between different categorical variable, we could use *Cramér's V method* to generate the association matrix and then plot it using **pheatmeap**
+
+```{r}
+library (vcd)
+diabetes_var <- colnames(diabetesdata)
+diabetes_association_matrix <- sapply(diabetes_var, function(x) {
+  sapply(diabetes_var, function(y) {
+    cramers_v <- assocstats(table(diabetesdata[[x]], diabetesdata[[y]]))$cramer
+    return(cramers_v)
+  })
+})
+
+library (pheatmap)
+pheatmap (diabetes_association_matrix, cluster_rows = FALSE, cluster_cols = FALSE,
+          color = colorRampPalette(c("ivory", "lightyellow", "green", "darkblue"))(100),
+          breaks = seq(0, 0.4, length.out = 101),
+          main = "Categorical Variable Association Matrix")
+```
+
+We could see the categorical variables most highly associated with Diabetic status is "General Health", "High BP", "High Chol", "High BMI". In addition, it is also associated with "Physical health", "Difficult to walk", "Heart disease or attack", "Age" and "Income". It is of note there are several other categorical factors that have strong association that we may need to take care of when doing modeling. Nevertheless, the strongest predictor that associates with diabetic status has a assocition score of merely 0.3. Hopefully we could find the combination of predictors through modelling that could explain ~0.7 of the diabetic status.
