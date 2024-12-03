@@ -52,6 +52,7 @@ diabetesdata |> group_by (Smoker, HeartDiseaseorAttack, Diabetes_binary) |> summ
 From the summary table we could easily find those factors significantly contribute to the occurance of diabetes. Is there a way to find the hazard ratio of those life-style factors to diabetes? Luckily there is a package for that.
 
 ```{r}
+library (tidyverse)
 diabetesdata |> group_by(HighBP, HighChol, Diabetes_binary) |> summarize (count = n()) |> pivot_wider(
   names_from = Diabetes_binary,
   values_from = count)
@@ -231,3 +232,5 @@ pheatmap (diabetes_association_matrix, cluster_rows = FALSE, cluster_cols = FALS
 ```
 
 We could see the categorical variables most highly associated with Diabetic status is "General Health", "High BP", "High Chol", "High BMI". In addition, it is also associated with "Physical health", "Difficult to walk", "Heart disease or attack", "Age" and "Income". It is of note there are several other categorical factors that have strong association that we may need to take care of when doing modeling. Nevertheless, the strongest predictor that associates with diabetic status has a assocition score of merely 0.3. Hopefully we could find the combination of predictors through modelling that could explain ~0.7 of the diabetic status.
+
+[Click here for the Modeling Page](Modeling.html)
