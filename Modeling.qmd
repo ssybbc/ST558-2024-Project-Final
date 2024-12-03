@@ -1,0 +1,13 @@
+---
+title: "ST558-2024-Project-Final-modeling"
+author: "Siyuan Su"
+format: html
+editor: visual
+---
+
+## Modeling the ethiology of diabetes
+
+As we saw it in the EDA analysis, there are several patho-physiological (High blood pressure, high cholestoral, difficult to walk, aging), social-economic (Education and Income) and life-style factors (achohol consumption) associated with occurrence of diabetes. It is not surprising, given diabetes arise from the inability of body to deal with the metabolism of sugar, which becomes readily available in modern daily life, in contrast to the environment where *homo sapiens* were evolutionized and refined, where food was in scarcity. However, there is no single factor that could explain more than 30% of diabetes incidence. Here we would like to create a model to further characterize the relationship between the incidence of diabetes and its predictors quantitatively.
+
+We start out by dividing our data set into training and testing set in a 70/30 divide.
+
