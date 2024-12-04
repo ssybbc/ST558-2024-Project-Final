@@ -73,23 +73,34 @@ diabetes_clstr_fits
  diabetes_clstr_fits |> collect_metrics ()
 ```
 
-Ideally we wanted to look at the smallest RSME, which is represented by "accuracy" in the .metric column. We could filter the table and then arrange it. The function *select_best()* could also be used to select the lowest rmse.
+Here we did not see the metric we wanted to find **mn_log_loss**. Then we could name the metrics we wanted to see and try rerun the tune_grid process using multiple core and a progress indicator.
 
 ```{r}
-diabetes_clstr_fit_results <- diabetes_clstr_fits |>collect_metrics() 
-diabetes_clstr_fit_results <- diabetes_clstr_fit_results|>
-  filter(.metric == "accuracy") |>
-  arrange (mean)
+metrics <- metric_set(accuracy, mn_log_loss)
 
-# Use summary () function to make sure the minimum value of rmse.
-summary (diabetes_clstr_fit_results$mean)
-summary (diabetes_clstr_fit_results$tree_depth)
+library(doParallel)
+registerDoParallel(cores = 6)
+
+diabetes_clstr_fits <- diabetes_clstr_wkf |> 
+  tune_grid(resamples = diabetesdata_5_fold,
+            grid = diabetes_clstr_grid,
+            metrics = metrics,
+            control = control_grid(verbose = TRUE))
+
+stopImplicitCluster()
+
+diabetes_clstr_fits |> collect_metrics ()
+
+diabetes_clstr_fit_results <- diabetes_clstr_fits |>collect_metrics() |>
+  filter (.metric == "mn_log_loss") |> arrange (mean)
+diabetes_clstr_fit_results
 ```
 
-It looks like through 5-fold cross validation, the best model (judging by the least mean squared error) is with the most tree depth. This is reasonable considering we have so many predictors to look at. We could use the *select_best* function to extract the model with the lowest rmse.
+From the grid-based computation, we computed that the best combination of cost complexity and tree depth is c (0.0000000001, 10). It looks like a minimum cost complexity and a moderately big tree depth.
+The function *select_best()* could also be used to select the lowest rmse.
 
 ```{r}
-diabetes_clstr_bestfit <- select_best (diabetes_clstr_fits, metric = "accuracy")
+diabetes_clstr_bestfit <- select_best (diabetes_clstr_fits, metric = "mn_log_loss")
 diabetes_clstr_bestfit
 ```
 
@@ -98,9 +109,15 @@ Now we have got the best fit of this classification tree model, we could use thi
 ```{r}
 diabetes_clstr_final_wkf <- diabetes_clstr_wkf |>
   finalize_workflow(diabetes_clstr_bestfit)
+
+registerDoParallel(cores = 6)
+
 diabetes_clstr_final_fit <- diabetes_clstr_final_wkf |>
-  last_fit(diabetesdata_split)
+  last_fit(diabetesdata_split,
+           metrics = metrics)
 diabetes_clstr_final_fit |> collect_metrics()
+
+stopImplicitCluster()
 ```
 
 Now we could see how this tree works using the package **rpart.plot**
@@ -176,14 +193,13 @@ diabetes_sample_fit |>
 
 Then we could get the best-performing data frame
 ```{r}
-diabetes_rf_best_params <- select_best(diabetes_sample_fit, "mn_log_loss")
+diabetes_rf_best_params <- select_best(diabetes_sample_fit, metric = "mn_log_loss")
 diabetes_rf_best_params
 ```
 
 Ultimately we could refit the random forest with our best parameters on the entire data set. To speed up the process, try implement multicore processing to enable parallel computation, although it is of best practise to use parallel computing at grid stage.
 
 ```{r}
-library(doParallel)
 registerDoParallel(cores = 6)
 
 diabetes_rf_final_wkf <- diabetes_rf_wkf |>
@@ -193,7 +209,17 @@ diabetes_rf_final_fit <- diabetes_rf_final_wkf |>
   last_fit(diabetesdata_split, 
            metrics = metric_set(accuracy, mn_log_loss),
            )
+
+stopImplicitCluster()
 ```
 
+Now we could compare the performance of the simple tree model and random forest model.
 
+```{r}
+diabetes_rf_final_model <- extract_workflow(diabetes_rf_final_fit) 
+diabetes_clstr_final_fit |> collect_metrics()
+diabetes_rf_final_fit |> collect_metrics()
+```
+
+We could see the random forest model improved the log loss value over the simple model, while the interpretability was sacrificed.
 
