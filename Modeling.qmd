@@ -26,21 +26,18 @@ diabetesdata_5_fold <- vfold_cv(diabetesdata_train, 5)
 
 ## Fitting the model using classificaton tree model.
 
-Tree models provide very intuitive and easy-to-interpret modeling and incorporates the contribution of different predictors. Specifically with this project, the goal of the decision tree is to predict the subjects' diabetic status (whether they are diabetic or not) through the values of predictors. Compared with the linear regression model, which provides output through sometimes complicated formula, the decision tree used a binary decision style that directs the user to make prediction in a step-by-step fashion. Depending on the property of the outcome,the decision tree model comprises both regression tree (when outcome is numeric) and classification tree (when outcome is categorical). Here because the outcome: **Diabetes_binary** is a categorical variable, we decided to fit this to a classification tree model.
+Tree models provide very intuitive and easy-to-interpret modeling and incorporates the contribution of different predictors. Tree-based model split up the space in the predictor into different segments, each neighbouring predictor space could have wildly different outcome.
+
+Specifically with this project, the goal of the decision tree is to predict the subjects' diabetic status (whether they are diabetic or not) through the values of predictors. Compared with the linear regression model, which provides output through sometimes complicated formula, the decision tree used a binary decision style that directs the user to make prediction in a step-by-step fashion. Depending on the property of the outcome,the decision tree model comprises both regression tree (when outcome is numeric) and classification tree (when outcome is categorical). Here because the outcome: **Diabetes_binary** is a categorical variable, we have to fit this to a classification tree model.
 
 We could start building the recipe for the classification tree model using the *parsnip* package.
 
 ```{r}
-diabetes_clstr_rec <- recipe (Diabetes_binary ~ ., data = diabetesdata) |>
-  step_dummy(all_factor_predictors()) |>
-  step_normalize(BMI, MentHlth, PhysHlth)
+diabetes_clstr_rec <- recipe (Diabetes_binary ~ ., data = diabetesdata_train) |>
+  step_dummy(all_factor_predictors())
 ```
 
-Forgot to mention another advantage of the tree model is no need to include interaction terms, because the tree account for the interaction itself. Now we could set the model and engine. There are three tuning parameters for us to tune: 
-1) tree_depth: Tree Depth (type: integer, default: 30L)
-2) min_n: Minimal Node Size (type: integer, default: 2L)
-3) cost_complexity: Cost-Complexity Parameter (type: double, default: 0.01)
-If we want to use CV to choose one of these, we can set its value to tune() when creating the model. Let’s use tree_depth and cost_complexity as our tuning parameters and set our min_n to 50.
+Forgot to mention another advantage of the tree model is no need to include interaction terms, because the tree account for the interaction itself. Now we could set the model and engine. There are three tuning parameters for us to tune: 1) tree_depth: Tree Depth (type: integer, default: 30L) 2) min_n: Minimal Node Size (type: integer, default: 2L) 3) cost_complexity: Cost-Complexity Parameter (type: double, default: 0.01) If we want to use CV to choose one of these, we can set its value to tune() when creating the model. Let’s use tree_depth and cost_complexity as our tuning parameters and set our min_n to 50.
 
 In the case of decision_tree() we also need to tell tidymodels whether we are doing a regression task vs a classification task. This is done via set_mode().
 
@@ -61,22 +58,19 @@ diabetes_clstr_wkf <- workflow() |>
   add_model(diabetes_clstr_mod)
 ```
 
-Now we can use **tune_grid()** on our **diabetesdata_5_fold** object. We just need to create a tuning grid to fit our models with. If we don’t specify one, the dials package tries to figure it out for us:
-```{r}
-diabetes_clstr_temp <- diabetes_clstr_wkf |> 
-  tune_grid(resamples = diabetesdata_5_fold)
-diabetes_clstr_temp |> 
-  collect_metrics()
+Now we can use **tune_grid()** on our **diabetesdata_5_fold** object. We just need to create a tuning grid to fit our models with. To reduce our computation burden, I will set the search for cost complexity and tree depth to a 4x4 level grid.
 
+```{r}
 diabetes_clstr_grid <- grid_regular(cost_complexity(),
                           tree_depth(),
-                          levels = c(10, 5))
+                          levels = c(4, 4))
 
 diabetes_clstr_fits <- diabetes_clstr_wkf |> 
   tune_grid(resamples = diabetesdata_5_fold,
             grid = diabetes_clstr_grid)
+
 diabetes_clstr_fits
-diabetes_clstr_fits |> collect_metrics ()
+ diabetes_clstr_fits |> collect_metrics ()
 ```
 
 Ideally we wanted to look at the smallest RSME, which is represented by "accuracy" in the .metric column. We could filter the table and then arrange it. The function *select_best()* could also be used to select the lowest rmse.
@@ -92,7 +86,7 @@ summary (diabetes_clstr_fit_results$mean)
 summary (diabetes_clstr_fit_results$tree_depth)
 ```
 
-It looks like through 5-fold cross validation, the best model (judging by the least mean squared error) is with the most tree depth. This is reasonable considering we have so many predictors to look at. We could use the *select_best* function to extract the model with the lowest rmse. According to the "IFU", *select_best* function selects the 
+It looks like through 5-fold cross validation, the best model (judging by the least mean squared error) is with the most tree depth. This is reasonable considering we have so many predictors to look at. We could use the *select_best* function to extract the model with the lowest rmse.
 
 ```{r}
 diabetes_clstr_bestfit <- select_best (diabetes_clstr_fits, metric = "accuracy")
@@ -120,4 +114,86 @@ diabetes_clstr_final_model |>
   rpart.plot::rpart.plot(roundint = FALSE)
 ```
 
-This is a user-friendly classification tree model. For example, if you have high blood pressure, BMI higher than 0.47 (after normalization), high blood cholestrol level, have difficulty to walk and bad general health, then there is a pretty high chance you will have diabetes. However, it has some significant drawbacks: if the subject does not have high blood pressure, then they are predicted to not have diabetes. Our model predicts that subject with high blood pressure but with lower BMI to not have diabetes, we could actual calculate the percentage of this: 18.7% people in the category actually had diabetes, meaning the misclassification rate was moderately high.
+This is a user-friendly classification tree model, albeit it has For example, if you have high blood pressure, BMI higher than 32, high blood cholestrol level, have difficulty to walk and bad general health, experienced heart disease or heart attack and had even experienced stroke, you will have very high chance of getting diagnosed with diabetes.
+
+To sum up, there are several advantages of using tree as the prediction model: 1) Tree models are **simple to understand** and easy to interpret output. Even with the tree model of 10 layers, users could follow simple guidance to predict individual's diabetic status. 2) Predictors **don’t need to be scaled**. That makes the results even more predictable. 3) No need to consider the **interaction** between variables. 4) No need to select variables, tree models could select *useful* variable by themselves.
+
+At the same time we need to bear in mind there are several drawbacks in the simple tree model as well. 1) Small changes in data can vastly change tree. 2) Simple tree model used a greedy algorithm that only looks at one step forward. With this setting it is possible the local best solution could be different from the global best solution. 3) Need to prune or use CV to determine the model. Here we used cross validation to figure out the optimal size of the tree, which could take quite some time for big data sets.
+
+To overcome the drawbacks, we used emsembled methods to reduce the variation of the tree models. One way to do it is through bagged tree model. Bagged tree model is basically to build many trees based on bootstrapped samples, and then average the trees to get a final tree. As we learned in the statistics course the variation of stats from averaged samples are often much smaller than the variations of stats from samples themselves, it is possibly truth as in the result of the tree model as well. The idea of random forest tree models were initially based on the bagged tree models.
+
+## Fitting the model using the random forest method.
+
+Random forest model also used averaged trees from bootstrapped samples. In addition, to avoid the impact of single or a small number of "strong" predictors, random forest randomly picked up predictors when building trees. Because the presence of one or a small number of strong predictors will direct trees towards one specific way, it will significantly increase variance. It seems random forest have somewhat alleviate this problem. Whether random forest works in our specific data set still needs to be compared with single tree method. Now let's work on the random forest model.
+
+I have heard about that random forest model takes generally a long time to run, so I decided to adpot several strategies to avoid that. 1) Randomly select 20% of my data set from the index of rows and tune the number of predictors to run based on this data set. 2) Setting up a monitor to know the progress of computing.
+
+First we will randomly select 20% of my data set.
+
+```{r}
+set.seed(123)  # For reproducibility
+diabetesdata_sample <- diabetesdata |> sample_frac(0.2)
+diabetesdata_5_fold_sample <- vfold_cv(diabetesdata_sample, 5)
+```
+
+We could keep the previous recipe, and then we tune the grid to get the number of variables. In the *set_engine* function we could also set argument *verbose* to TRUE to allow monitor of the progress.
+
+```{r}
+diabetes_rf_rec <- diabetes_clstr_rec 
+diabetes_rf_mod <- rand_forest(mtry = tune()) |>
+  set_engine("ranger", verbose = TRUE) |>
+  set_mode("classification")
+```
+
+With the recipe and model we could build our workflow
+
+```{r}
+diabetes_rf_wkf <- workflow() |>
+  add_recipe (diabetes_rf_rec) |>
+  add_model (diabetes_rf_mod)
+```
+
+With the new random forest work flow, we could implement this on our sample CV fold data
+
+```{r}
+library (progress)
+library (ranger)
+ diabetes_sample_fit <- diabetes_rf_wkf |>
+  tune_grid(resamples = diabetesdata_5_fold_sample, 
+            grid = 10,
+            control = control_grid(verbose = TRUE),
+            metrics = metric_set(accuracy, mn_log_loss))
+```
+
+Now that we finished calculating we could sort the result using the **mn log loss**.
+
+```{r}
+diabetes_sample_fit |>
+  collect_metrics() |>
+  filter(.metric == "mn_log_loss") |> 
+  arrange(mean)
+```
+
+Then we could get the best-performing data frame
+```{r}
+diabetes_rf_best_params <- select_best(diabetes_sample_fit, "mn_log_loss")
+diabetes_rf_best_params
+```
+
+Ultimately we could refit the random forest with our best parameters on the entire data set. To speed up the process, try implement multicore processing to enable parallel computation, although it is of best practise to use parallel computing at grid stage.
+
+```{r}
+library(doParallel)
+registerDoParallel(cores = 6)
+
+diabetes_rf_final_wkf <- diabetes_rf_wkf |>
+  finalize_workflow(diabetes_rf_best_params)
+
+diabetes_rf_final_fit <- diabetes_rf_final_wkf |>
+  last_fit(diabetesdata_split, 
+           metrics = metric_set(accuracy, mn_log_loss),
+           )
+```
+
+
+
