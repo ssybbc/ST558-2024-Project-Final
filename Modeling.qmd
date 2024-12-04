@@ -11,3 +11,113 @@ As we saw it in the EDA analysis, there are several patho-physiological (High bl
 
 We start out by dividing our data set into training and testing set in a 70/30 divide.
 
+```{r}
+library (tidymodels)
+diabetesdata_split <- initial_split (diabetesdata, prop = 0.7)
+```
+
+Now we could create a 5-fold CV on training data set.
+
+```{r}
+diabetesdata_train <- training (diabetesdata_split)
+diabetesdata_test <- testing (diabetesdata_split)
+diabetesdata_5_fold <- vfold_cv(diabetesdata_train, 5)
+```
+
+## Fitting the model using classificaton tree model.
+
+Tree models provide very intuitive and easy-to-interpret modeling and incorporates the contribution of different predictors. Specifically with this project, the goal of the decision tree is to predict the subjects' diabetic status (whether they are diabetic or not) through the values of predictors. Compared with the linear regression model, which provides output through sometimes complicated formula, the decision tree used a binary decision style that directs the user to make prediction in a step-by-step fashion. Depending on the property of the outcome,the decision tree model comprises both regression tree (when outcome is numeric) and classification tree (when outcome is categorical). Here because the outcome: **Diabetes_binary** is a categorical variable, we decided to fit this to a classification tree model.
+
+We could start building the recipe for the classification tree model using the *parsnip* package.
+
+```{r}
+diabetes_clstr_rec <- recipe (Diabetes_binary ~ ., data = diabetesdata) |>
+  step_dummy(all_factor_predictors()) |>
+  step_normalize(BMI, MentHlth, PhysHlth)
+```
+
+Forgot to mention another advantage of the tree model is no need to include interaction terms, because the tree account for the interaction itself. Now we could set the model and engine. There are three tuning parameters for us to tune: 
+1) tree_depth: Tree Depth (type: integer, default: 30L)
+2) min_n: Minimal Node Size (type: integer, default: 2L)
+3) cost_complexity: Cost-Complexity Parameter (type: double, default: 0.01)
+If we want to use CV to choose one of these, we can set its value to tune() when creating the model. Let’s use tree_depth and cost_complexity as our tuning parameters and set our min_n to 50.
+
+In the case of decision_tree() we also need to tell tidymodels whether we are doing a regression task vs a classification task. This is done via set_mode().
+
+```{r}
+diabetes_clstr_mod <- decision_tree(tree_depth = tune(),
+                          min_n = 20,
+                          cost_complexity = tune()) |>
+  set_engine("rpart") |>
+  set_mode("classification")
+diabetes_clstr_mod
+```
+
+Having set up the model and the receipe we could now set up our work flow
+
+```{r}
+diabetes_clstr_wkf <- workflow() |>
+  add_recipe(diabetes_clstr_rec) |>
+  add_model(diabetes_clstr_mod)
+```
+
+Now we can use **tune_grid()** on our **diabetesdata_5_fold** object. We just need to create a tuning grid to fit our models with. If we don’t specify one, the dials package tries to figure it out for us:
+```{r}
+diabetes_clstr_temp <- diabetes_clstr_wkf |> 
+  tune_grid(resamples = diabetesdata_5_fold)
+diabetes_clstr_temp |> 
+  collect_metrics()
+
+diabetes_clstr_grid <- grid_regular(cost_complexity(),
+                          tree_depth(),
+                          levels = c(10, 5))
+
+diabetes_clstr_fits <- diabetes_clstr_wkf |> 
+  tune_grid(resamples = diabetesdata_5_fold,
+            grid = diabetes_clstr_grid)
+diabetes_clstr_fits
+diabetes_clstr_fits |> collect_metrics ()
+```
+
+Ideally we wanted to look at the smallest RSME, which is represented by "accuracy" in the .metric column. We could filter the table and then arrange it. The function *select_best()* could also be used to select the lowest rmse.
+
+```{r}
+diabetes_clstr_fit_results <- diabetes_clstr_fits |>collect_metrics() 
+diabetes_clstr_fit_results <- diabetes_clstr_fit_results|>
+  filter(.metric == "accuracy") |>
+  arrange (mean)
+
+# Use summary () function to make sure the minimum value of rmse.
+summary (diabetes_clstr_fit_results$mean)
+summary (diabetes_clstr_fit_results$tree_depth)
+```
+
+It looks like through 5-fold cross validation, the best model (judging by the least mean squared error) is with the most tree depth. This is reasonable considering we have so many predictors to look at. We could use the *select_best* function to extract the model with the lowest rmse. According to the "IFU", *select_best* function selects the 
+
+```{r}
+diabetes_clstr_bestfit <- select_best (diabetes_clstr_fits, metric = "accuracy")
+diabetes_clstr_bestfit
+```
+
+Now we have got the best fit of this classification tree model, we could use this model to update our work flow.
+
+```{r}
+diabetes_clstr_final_wkf <- diabetes_clstr_wkf |>
+  finalize_workflow(diabetes_clstr_bestfit)
+diabetes_clstr_final_fit <- diabetes_clstr_final_wkf |>
+  last_fit(diabetesdata_split)
+diabetes_clstr_final_fit |> collect_metrics()
+```
+
+Now we could see how this tree works using the package **rpart.plot**
+
+```{r}
+library (rpart.plot)
+diabetes_clstr_final_model <- extract_workflow(diabetes_clstr_final_fit) 
+diabetes_clstr_final_model
+diabetes_clstr_final_model |>
+  extract_fit_engine() |>
+  rpart.plot::rpart.plot(roundint = FALSE)
+```
+
+This is a user-friendly classification tree model. For example, if you have high blood pressure, BMI higher than 0.47 (after normalization), high blood cholestrol level, have difficulty to walk and bad general health, then there is a pretty high chance you will have diabetes. However, it has some significant drawbacks: if the subject does not have high blood pressure, then they are predicted to not have diabetes. Our model predicts that subject with high blood pressure but with lower BMI to not have diabetes, we could actual calculate the percentage of this: 18.7% people in the category actually had diabetes, meaning the misclassification rate was moderately high.
